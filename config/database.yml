@@ -19,13 +19,13 @@ default: &default
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
 
+  host: <%= ENV.fetch("DATABASE_HOST") { "db" } %>
+  username: <%= ENV.fetch("POSTGRES_USER") { "postgres" } %>
+  password: <%= ENV.fetch("POSTGRES_PASSWORD") { "password" } %>
 
 development:
   <<: *default
   database: bayern_guesser_development
-  host: <%= ENV.fetch("DATABASE_HOST") { "db" } %>
-  username: <%= ENV.fetch("POSTGRES_USER") { "postgres" } %>
-  password: <%= ENV.fetch("POSTGRES_PASSWORD") { "password" } %>
 
   # The password associated with the PostgreSQL role (username).
   #password:
@@ -54,9 +54,6 @@ development:
 test:
   <<: *default
   database: bayern_guesser_test
-  host: <%= ENV.fetch("DATABASE_HOST") { "db" } %>
-  username: <%= ENV.fetch("POSTGRES_USER") { "postgres" } %>
-  password: <%= ENV.fetch("POSTGRES_PASSWORD") { "password" } %>
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is
@@ -85,20 +82,7 @@ test:
 # for a full overview on how database connection configuration can be specified.
 #
 production:
-  primary: &primary_production
-    <<: *default
-    database: bayern_guesser_production
-    username: app
-    password: <%= ENV["APP_DATABASE_PASSWORD"] %>
-  cache:
-    <<: *primary_production
-    database: bayern_guesser_production_cache
-    migrations_paths: db/cache_migrate
-  queue:
-    <<: *primary_production
-    database: bayern_guesser_production_queue
-    migrations_paths: db/queue_migrate
-  cable:
-    <<: *primary_production
-    database: bayern_guesser_production_cable
-    migrations_paths: db/cable_migrate
+  <<: *default
+  database: bayern_guesser_production
+  username: app
+  password: <%= ENV["APP_DATABASE_PASSWORD"] %>
