@@ -1,0 +1,279 @@
+<div class="game-container" style="position: relative;">
+  <h1 class="glow-text" style="text-align: center;">Bayern München Guesser</h1>
+  
+  <div id="alert-container" class="alert" style="display: none;"></div>
+
+  <div id="success-container" class="success" style="display: none;">
+    <h2 id="success-message"></h2>
+    <div class="action-buttons" style="display: flex; gap: 10px; justify-content: center; margin-top: 15px;">
+      <button onclick="window.location.reload()" class="btn">Play Again</button>
+    </div>
+  </div>
+
+  <div id="guess-form-container" class="guess-form">
+    <button type="button" id="reveal-btn" class="btn" style="flex: 0 1 auto; border-radius: 4px;">Reveal Answer</button>
+    <form id="guess-form" onsubmit="handleGuess(event)">
+      <div class="autocomplete-container" style="position: relative; flex: 1; display: flex;">
+        <input type="text" id="player-input" placeholder="Guess a player..." required autocomplete="off" class="input-field" oninput="showAutocomplete()" onfocus="showAutocomplete()">
+        <ul id="autocomplete-list" class="autocomplete-items" style="display: none;"></ul>
+      </div>
+      <button type="submit" class="btn">Guess</button>
+    </form>
+  </div>
+
+  <div class="guesses-container">
+    <div class="guesses-header">
+      <div class="header-cell">Name</div>
+      <button class="header-cell hint-btn tooltip-container" id="hint-nationality" onclick="revealHint('nationality')" data-tooltip="Click to reveal">Nationality</button>
+      <button class="header-cell hint-btn tooltip-container" id="hint-position" onclick="revealHint('position')" data-tooltip="Click to reveal">Position</button>
+      <button class="header-cell hint-btn tooltip-container" id="hint-height" onclick="revealHint('height')" data-tooltip="Click to reveal">Height</button>
+      <button class="header-cell hint-btn tooltip-container" id="hint-age" onclick="revealHint('age')" data-tooltip="Click to reveal">Age</button>
+      <button class="header-cell hint-btn tooltip-container" id="hint-foot" onclick="revealHint('preferred_foot')" data-tooltip="Click to reveal">Foot</button>
+    </div>
+    
+    <!-- ここに推測結果の行がJSで挿入されます -->
+    <div id="guesses-list" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
+  </div>
+</div>
+
+<script>
+  // サーバーから渡されたデータ
+  window.playersData = <%= raw @players.to_json(methods: [:age]) %>;
+  window.answerData = <%= raw @answer_player.to_json(methods: [:age]) %>;
+  window.guessedPlayers = [];
+
+  // 入力された名前の正規化ヘルパー (アクセント記号を除去して小文字化)
+  function normalizeString(str) {
+    return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  }
+
+  let currentFocus = -1;
+
+  function showAutocomplete() {
+    const input = document.getElementById('player-input');
+    const list = document.getElementById('autocomplete-list');
+    const val = input.value.trim();
+    const normalizedVal = normalizeString(val);
+    currentFocus = -1;
+
+    list.innerHTML = '';
+    if (!val) {
+      // 未入力の場合は全員表示する（見やすさのため最大10件程度にするか、全員出すか）
+      // スマホで追加しやすいように、全選手をサジェストに出す
+      const allPlayers = window.playersData.filter(p => !window.guessedPlayers.some(g => g.id === p.id));
+      renderAutocompleteItems(allPlayers);
+    } else {
+      // 表記揺れ（アクセント無視）かつ部分一致で検索
+      const matches = window.playersData.filter(p => {
+        // すでに推測済みの選手は除外
+        if (window.guessedPlayers.some(g => g.id === p.id)) return false;
+        
+        const normalizedName = normalizeString(p.name);
+        // 部分一致を許容
+        return normalizedName.includes(normalizedVal);
+      });
+      renderAutocompleteItems(matches);
+    }
+  }
+
+  function renderAutocompleteItems(players) {
+    const list = document.getElementById('autocomplete-list');
+    if (players.length === 0) {
+      list.style.display = 'none';
+      return;
+    }
+    
+    players.forEach(p => {
+      const li = document.createElement('li');
+      li.textContent = p.name;
+      li.onclick = () => {
+        document.getElementById('player-input').value = p.name;
+        list.style.display = 'none';
+        document.getElementById('player-input').focus();
+      };
+      list.appendChild(li);
+    });
+    list.style.display = 'block';
+  }
+
+  function addActive(items) {
+    if (!items) return false;
+    removeActive(items);
+    if (currentFocus >= items.length) currentFocus = 0;
+    if (currentFocus < 0) currentFocus = (items.length - 1);
+    items[currentFocus].classList.add("autocomplete-active");
+    items[currentFocus].style.backgroundColor = "#e9e9e9";
+    items[currentFocus].scrollIntoView({ block: 'nearest' });
+  }
+
+  function removeActive(items) {
+    for (let i = 0; i < items.length; i++) {
+      items[i].classList.remove("autocomplete-active");
+      items[i].style.backgroundColor = "";
+    }
+  }
+
+  document.getElementById('player-input').addEventListener('keydown', function(e) {
+    const list = document.getElementById('autocomplete-list');
+    if (list.style.display === 'none') return;
+    
+    let items = list.getElementsByTagName('li');
+    if (e.key === 'ArrowDown' || (!e.shiftKey && e.key === 'Tab')) {
+      e.preventDefault();
+      currentFocus++;
+      addActive(items);
+    } else if (e.key === 'ArrowUp' || (e.shiftKey && e.key === 'Tab')) {
+      e.preventDefault();
+      currentFocus--;
+      addActive(items);
+    } else if (e.key === 'Enter') {
+      // 選択肢がハイライトされている場合は、デフォルトの挙動（送信やフォーカス移動）をキャンセルし、文字を格納するのみ
+      if (currentFocus > -1 && items.length > 0) {
+        e.preventDefault();
+        items[currentFocus].click();
+      }
+    }
+  });
+
+  // 画面外クリックでオートコンプリートを閉じる
+  document.addEventListener('click', function(e) {
+    if (!document.getElementById('guess-form-container').contains(e.target)) {
+      document.getElementById('autocomplete-list').style.display = 'none';
+    }
+  });
+
+  function handleGuess(event) {
+    event.preventDefault();
+    const inputField = document.getElementById('player-input');
+    submitGuess(inputField.value);
+  }
+
+  function submitGuess(guessName) {
+    const inputField = document.getElementById('player-input');
+    guessName = guessName.trim();
+    const normalizedInput = normalizeString(guessName);
+    const list = document.getElementById('autocomplete-list');
+    
+    // 入力された名前に一致するプレイヤーを探す（部分一致または完全一致）
+    // Enterで直接送信された場合、完全一致を優先し、なければ部分一致で候補を絞る
+    let guessedPlayer = window.playersData.find(p => 
+      normalizeString(p.name) === normalizedInput
+    );
+    
+    if (!guessedPlayer) {
+      // 完全一致がない場合、表記ゆれ（部分一致）で検索して1件だけ見つかればそれを採用
+      const partialMatches = window.playersData.filter(p => normalizeString(p.name).includes(normalizedInput));
+      if (partialMatches.length === 1) {
+        guessedPlayer = partialMatches[0];
+      } else if (partialMatches.length > 1) {
+        showAlert("Multiple players match. Please select from the list.");
+        showAutocomplete();
+        return;
+      }
+    }
+
+    if (!guessedPlayer) {
+      showAlert("Player not found.");
+      return;
+    }
+
+    if (window.guessedPlayers.some(p => p.id === guessedPlayer.id)) {
+      showAlert("You already guessed this player.");
+      inputField.value = '';
+      list.style.display = 'none';
+      return;
+    }
+
+    hideAlert();
+    window.guessedPlayers.unshift(guessedPlayer); // リストの先頭に追加
+    inputField.value = '';
+    list.style.display = 'none';
+    
+    renderGuesses();
+
+    // 正解判定
+    if (guessedPlayer.id === window.answerData.id) {
+      endGame(true);
+    }
+  }
+
+  function revealHint(attribute) {
+    const hintBtn = document.getElementById(`hint-${attribute === 'preferred_foot' ? 'foot' : attribute}`);
+    
+    let value = window.answerData[attribute];
+    if (attribute === 'height') {
+      value = value + "cm";
+    }
+    
+    hintBtn.textContent = value;
+    hintBtn.classList.remove('tooltip-container');
+    hintBtn.classList.add('revealed');
+    hintBtn.disabled = true;
+    hintBtn.removeAttribute('data-tooltip');
+  }
+
+  function renderGuesses() {
+    const list = document.getElementById('guesses-list');
+    list.innerHTML = ''; // クリア
+
+    window.guessedPlayers.forEach(guess => {
+      const row = document.createElement('div');
+      row.className = 'guess-row';
+
+      const ans = window.answerData;
+
+      // セル生成ヘルパー
+      const createCell = (content, matchClass) => {
+        return `<div class="guess-cell ${matchClass}">${content}</div>`;
+      };
+
+      // 数値比較セル生成ヘルパー
+      const createNumberCell = (guessVal, ansVal) => {
+        if (guessVal === ansVal) return createCell(guessVal, 'match');
+        const arrow = guessVal > ansVal ? '↓' : '↑';
+        return createCell(`${guessVal} ${arrow}`, 'mismatch');
+      };
+
+      row.innerHTML = `
+        ${createCell(guess.name, guess.name === ans.name ? 'match' : 'mismatch')}
+        ${createCell(guess.nationality, guess.nationality === ans.nationality ? 'match' : 'mismatch')}
+        ${createCell(guess.position, guess.position === ans.position ? 'match' : 'mismatch')}
+        ${createNumberCell(guess.height, ans.height)}
+        ${createNumberCell(guess.age, ans.age)}
+        ${createCell(guess.preferred_foot, guess.preferred_foot === ans.preferred_foot ? 'match' : 'mismatch')}
+      `;
+
+      list.appendChild(row);
+    });
+  }
+
+  function endGame(isWin) {
+    document.getElementById('guess-form-container').style.display = 'none';
+    const successContainer = document.getElementById('success-container');
+    const successMessage = document.getElementById('success-message');
+    
+    if (isWin) {
+      successMessage.textContent = "Congratulations! You guessed the player!";
+    } else {
+      successMessage.textContent = "The player is " + window.answerData.name;
+    }
+    
+    successContainer.style.display = 'block';
+  }
+
+  // Reveal Answer
+  document.getElementById('reveal-btn').addEventListener('click', () => {
+    endGame(false);
+  });
+
+  function showAlert(msg) {
+    const alertBox = document.getElementById('alert-container');
+    alertBox.textContent = msg;
+    alertBox.style.display = 'block';
+  }
+
+  function hideAlert() {
+    const alertBox = document.getElementById('alert-container');
+    alertBox.style.display = 'none';
+  }
+</script>
