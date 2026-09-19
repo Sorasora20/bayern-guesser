@@ -14,6 +14,8 @@ RUN bundle install
 # プロジェクト全体のコピー
 COPY . /app
 
+ENV RAILS_RELATIVE_URL_ROOT="/bayern"
+
 # アセットのプリコンパイル (Production環境用)
 RUN SECRET_KEY_BASE_DUMMY=1 bundle exec rails assets:precompile
 
@@ -21,6 +23,8 @@ RUN SECRET_KEY_BASE_DUMMY=1 bundle exec rails assets:precompile
 COPY entrypoint.sh /usr/bin/
 RUN chmod +x /usr/bin/entrypoint.sh
 ENTRYPOINT ["entrypoint.sh"]
+
+RUN cd public && ln -s . bayern
 
 # Railsサーバーの起動
 EXPOSE 3000
